@@ -93,7 +93,7 @@ The project uses the following libraries, included in the fat JAR:
 
 2. **Run the application**:
    ```bash
-   java -jar target/optimizer-1.0-SNAPSHOT.jar orders.json paymentmethods.json
+   java -jar optimizer-1.0-SNAPSHOT.jar orders.json paymentmethods.json
    ```
 
 3. **Expected output**:
@@ -114,25 +114,7 @@ mvn test -Dtest="com.ocado.MainTest"
 mvn test -Dtest="com.ocado.service.OptimizerServiceTest"
 ```
 
-## Logging
 
-- Logging is configured via `logback-test.xml` (for tests) and defaults to console output in production.
-- Logs include information about loaded files and processing steps (level: INFO).
 
-## Creating the Submission Archive
 
-To create a `.zip` archive for submission:
-1. Build the project:
-   ```bash
-   mvn clean package
-   ```
-2. Create the archive:
-   ```bash
-   zip -r optimizer.zip src pom.xml README.md target/optimizer-1.0-SNAPSHOT.jar
-   ```
-   This includes:
-   - Source code (`src/`).
-   - `pom.xml`.
-   - `README.md`.
-   - Fat JAR (`target/optimizer-1.0-SNAPSHOT.jar`).
 
