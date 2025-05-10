@@ -1,0 +1,4 @@
+com\ocado\service\OptimizerServiceTest.class
+com\ocado\model\OrderTest.class
+com\ocado\model\PaymentMethodTest.class
+com\ocado\MainTest.class

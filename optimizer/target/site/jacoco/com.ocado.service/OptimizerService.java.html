@@ -1,0 +1,310 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="pl"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OptimizerService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">optimizer</a> &gt; <a href="index.source.html" class="el_package">com.ocado.service</a> &gt; <span class="el_source">OptimizerService.java</span></div><h1>OptimizerService.java</h1><pre class="source lang-java linenums">package com.ocado.service;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.ocado.model.Order;
+import com.ocado.model.PaymentMethod;
+
+/**
+ * Service to optimize payment methods for orders, maximizing total discount while preferring loyalty points.
+ */
+public class OptimizerService {
+<span class="fc" id="L23">    private static final Logger logger = LoggerFactory.getLogger(OptimizerService.class);</span>
+    private static final String POINTS_METHOD = &quot;PUNKTY&quot;;
+<span class="fc" id="L25">    private static final BigDecimal MIN_POINTS_PERCENT = new BigDecimal(&quot;0.10&quot;);</span>
+<span class="fc" id="L26">    private static final BigDecimal PARTIAL_POINTS_DISCOUNT = new BigDecimal(&quot;0.90&quot;); // 10% discount</span>
+<span class="fc" id="L27">    private static final BigDecimal HUNDRED = new BigDecimal(&quot;100&quot;);</span>
+
+    private final Map&lt;String, PaymentMethod&gt; methodMap;
+<span class="fc" id="L30">    private final Map&lt;String, BigDecimal&gt; methodUsage = new HashMap&lt;&gt;();</span>
+    private final PaymentMethod points;
+<span class="fc" id="L32">    private final Map&lt;Order, BigDecimal&gt; discountCache = new HashMap&lt;&gt;();</span>
+
+    /**
+     * Initializes the optimizer with available payment methods.
+     *
+     * @param methods List of payment methods.
+     */
+<span class="fc" id="L39">    public OptimizerService(List&lt;PaymentMethod&gt; methods) {</span>
+<span class="fc" id="L40">        methodMap = new HashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L41" title="All 2 branches covered.">        for (PaymentMethod method : methods) {</span>
+<span class="fc" id="L42">            methodMap.put(method.getId(), method);</span>
+<span class="fc" id="L43">        }</span>
+<span class="fc" id="L44">        points = methodMap.get(POINTS_METHOD);</span>
+<span class="fc bfc" id="L45" title="All 2 branches covered.">        if (points == null) {</span>
+<span class="fc" id="L46">            methodMap.put(POINTS_METHOD, new PaymentMethod(POINTS_METHOD, 0, &quot;0.00&quot;));</span>
+
+        }
+<span class="fc" id="L49">    }</span>
+
+    /**
+     * Processes a list of orders, assigning optimal payment methods.
+     *
+     * @param orders List of orders to process.
+     */
+    public void processOrders(List&lt;Order&gt; orders) {
+        // Calculate discounts for all orders and log them
+<span class="fc" id="L58">        discountCache.clear();</span>
+<span class="fc bfc" id="L59" title="All 2 branches covered.">        for (Order order : orders) {</span>
+<span class="fc" id="L60">            BigDecimal maxDiscount = calculateMaxDiscount(order);</span>
+<span class="fc" id="L61">            discountCache.put(order, maxDiscount);</span>
+<span class="fc" id="L62">        }</span>
+
+        // Sort orders by maximum potential discount (descending)
+<span class="fc" id="L65">        List&lt;Order&gt; sortedOrders = new ArrayList&lt;&gt;(orders);</span>
+<span class="fc" id="L66">        sortedOrders.sort(Comparator.comparing(order -&gt; discountCache.get(order), Comparator.reverseOrder()));</span>
+
+        // Try assigning payment methods
+<span class="fc bfc" id="L69" title="All 2 branches covered.">        if (!assignPayments(sortedOrders, new HashMap&lt;&gt;(methodMap), new ArrayList&lt;&gt;())) {</span>
+<span class="fc" id="L70">            throw new IllegalStateException(&quot;No valid payment combination found for all orders&quot;);</span>
+        }
+<span class="fc" id="L72">    }</span>
+    /**
+     * Calculates the maximum possible discount for an order.
+     *
+     * @param order The order.
+     * @return The maximum discount amount.
+     */
+    private BigDecimal calculateMaxDiscount(Order order) {
+<span class="fc" id="L80">        BigDecimal orderValue = order.getValue();</span>
+<span class="fc" id="L81">        List&lt;BigDecimal&gt; discounts = new ArrayList&lt;&gt;();</span>
+
+        // Card promotions
+<span class="fc bfc" id="L84" title="All 2 branches covered.">        if (order.getPromotions() != null) {</span>
+<span class="fc bfc" id="L85" title="All 2 branches covered.">            for (String promo : order.getPromotions()) {</span>
+<span class="fc" id="L86">                PaymentMethod method = methodMap.get(promo);</span>
+<span class="fc bfc" id="L87" title="All 4 branches covered.">                if (method != null &amp;&amp; method.getLimit().compareTo(orderValue) &gt;= 0) {</span>
+<span class="fc" id="L88">                    BigDecimal discount = orderValue.multiply(BigDecimal.valueOf(method.getDiscount()))</span>
+<span class="fc" id="L89">                            .divide(HUNDRED, 2, RoundingMode.HALF_UP);</span>
+<span class="fc" id="L90">                    discounts.add(discount);</span>
+                }
+<span class="fc" id="L92">            }</span>
+        }
+
+        // Full points
+<span class="fc bfc" id="L96" title="All 4 branches covered.">        if (points != null &amp;&amp; points.getLimit().compareTo(orderValue) &gt;= 0) {</span>
+<span class="fc" id="L97">            BigDecimal discount = orderValue.multiply(BigDecimal.valueOf(points.getDiscount()))</span>
+<span class="fc" id="L98">                    .divide(HUNDRED, 2, RoundingMode.HALF_UP);</span>
+<span class="fc" id="L99">            discounts.add(discount);</span>
+        }
+
+        // Partial points
+<span class="fc" id="L103">        BigDecimal minPoints = orderValue.multiply(MIN_POINTS_PERCENT).setScale(2, RoundingMode.HALF_UP);</span>
+<span class="fc bfc" id="L104" title="All 4 branches covered.">        if (points != null &amp;&amp; points.getLimit().compareTo(minPoints) &gt;= 0) {</span>
+<span class="fc" id="L105">            BigDecimal discount = orderValue.multiply(BigDecimal.ONE.subtract(PARTIAL_POINTS_DISCOUNT));</span>
+<span class="fc" id="L106">            discounts.add(discount);</span>
+        }
+
+<span class="fc" id="L109">        return discounts.stream().max(BigDecimal::compareTo).orElse(BigDecimal.ZERO);</span>
+    }
+
+    /**
+     * Recursively assigns payment methods to orders, backtracking if necessary.
+     *
+     * @param orders      Remaining orders to process.
+     * @param limits      Current available limits for payment methods.
+     * @param assignments Current payment assignments.
+     * @return True if a valid assignment is found, false otherwise.
+     */
+    private boolean assignPayments(List&lt;Order&gt; orders, Map&lt;String, PaymentMethod&gt; limits, List&lt;PaymentAssignment&gt; assignments) {
+<span class="fc bfc" id="L121" title="All 2 branches covered.">        if (orders.isEmpty()) {</span>
+<span class="fc bfc" id="L122" title="All 2 branches covered.">            for (PaymentAssignment assignment : assignments) {</span>
+<span class="fc" id="L123">                applyPayment(assignment);</span>
+<span class="fc" id="L124">            }</span>
+<span class="fc" id="L125">            return true;</span>
+        }
+
+<span class="fc" id="L128">        Order order = orders.get(0);</span>
+<span class="fc" id="L129">        List&lt;Order&gt; remainingOrders = orders.subList(1, orders.size());</span>
+<span class="fc" id="L130">        BigDecimal orderValue = order.getValue();</span>
+<span class="fc" id="L131">        Map&lt;String, PaymentOption&gt; options = new LinkedHashMap&lt;&gt;();</span>
+
+        // Option 1: Full payment with a card (with promotion)
+<span class="fc bfc" id="L134" title="All 2 branches covered.">        if (order.getPromotions() != null) {</span>
+<span class="fc bfc" id="L135" title="All 2 branches covered.">            for (String promo : order.getPromotions()) {</span>
+<span class="fc" id="L136">                PaymentMethod method = limits.get(promo);</span>
+<span class="fc bfc" id="L137" title="All 4 branches covered.">                if (method != null &amp;&amp; method.getLimit().compareTo(orderValue) &gt;= 0) {</span>
+<span class="fc" id="L138">                    BigDecimal discountPercent = BigDecimal.valueOf(100 - method.getDiscount())</span>
+<span class="fc" id="L139">                            .divide(HUNDRED, 4, RoundingMode.HALF_UP);</span>
+<span class="fc" id="L140">                    BigDecimal discountedValue = orderValue.multiply(discountPercent).setScale(2, RoundingMode.HALF_UP);</span>
+<span class="fc" id="L141">                    options.put(method.getId(), new PaymentOption(method.getId(), discountedValue, orderValue, 2)); // Karta: priorytet 2</span>
+                }
+<span class="fc" id="L143">            }</span>
+        }
+
+        // Option 2: Full payment with loyalty points
+<span class="fc bfc" id="L147" title="All 4 branches covered.">        if (points != null &amp;&amp; limits.get(POINTS_METHOD).getLimit().compareTo(orderValue) &gt;= 0) {</span>
+<span class="fc" id="L148">            BigDecimal discountPercent = BigDecimal.valueOf(100 - points.getDiscount())</span>
+<span class="fc" id="L149">                    .divide(HUNDRED, 4, RoundingMode.HALF_UP);</span>
+<span class="fc" id="L150">            BigDecimal discountedValue = orderValue.multiply(discountPercent).setScale(2, RoundingMode.HALF_UP);</span>
+<span class="fc" id="L151">            options.put(POINTS_METHOD, new PaymentOption(POINTS_METHOD, discountedValue, orderValue, 1)); // Punkty: priorytet 1</span>
+        }
+
+        // Option 3: Partial payment with points (≥10%) + card (no promo)
+<span class="fc bfc" id="L155" title="All 4 branches covered.">        if (points != null &amp;&amp; limits.get(POINTS_METHOD).getLimit().compareTo(BigDecimal.ZERO) &gt; 0) {</span>
+<span class="fc" id="L156">            BigDecimal minPoints = orderValue.multiply(MIN_POINTS_PERCENT).setScale(2, RoundingMode.HALF_UP);</span>
+<span class="pc bpc" id="L157" title="1 of 2 branches missed.">            if (limits.get(POINTS_METHOD).getLimit().compareTo(minPoints) &gt;= 0) {</span>
+<span class="fc" id="L158">                BigDecimal discountedValue = orderValue.multiply(PARTIAL_POINTS_DISCOUNT).setScale(2, RoundingMode.HALF_UP);</span>
+<span class="fc" id="L159">                BigDecimal pointsUsed = minPoints.min(limits.get(POINTS_METHOD).getLimit());</span>
+<span class="fc" id="L160">                BigDecimal remaining = discountedValue.subtract(pointsUsed);</span>
+
+<span class="fc" id="L162">                Optional&lt;PaymentMethod&gt; backupCard = limits.values().stream()</span>
+<span class="fc bfc" id="L163" title="All 2 branches covered.">                        .filter(m -&gt; !m.getId().equals(POINTS_METHOD))</span>
+<span class="fc bfc" id="L164" title="All 2 branches covered.">                        .filter(m -&gt; m.getLimit().compareTo(remaining) &gt;= 0)</span>
+<span class="fc" id="L165">                        .findFirst();</span>
+
+<span class="fc bfc" id="L167" title="All 2 branches covered.">                if (backupCard.isPresent()) {</span>
+<span class="fc" id="L168">                    String key = POINTS_METHOD + &quot;+&quot; + backupCard.get().getId();</span>
+<span class="fc" id="L169">                    options.put(key, new PaymentOption(key, discountedValue, pointsUsed, remaining, 0)); // Częściowe punkty: priorytet 0</span>
+                }
+            }
+        }
+
+        // Try each option in order of discount and priority
+<span class="fc" id="L175">        List&lt;PaymentOption&gt; sortedOptions = options.values().stream()</span>
+<span class="fc" id="L176">                .sorted(Comparator.comparing(PaymentOption::getTotalAmount)</span>
+<span class="fc" id="L177">                        .thenComparingInt(PaymentOption::getPriority).reversed()) // Niższy priorytet = lepszy</span>
+<span class="fc" id="L178">                .toList();</span>
+
+<span class="fc bfc" id="L180" title="All 2 branches covered.">        for (PaymentOption option : sortedOptions) {</span>
+
+            // Apply option and update limits
+<span class="fc" id="L183">            Map&lt;String, PaymentMethod&gt; newLimits = new HashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L184" title="All 2 branches covered.">            for (PaymentMethod m : limits.values()) {</span>
+<span class="fc" id="L185">                newLimits.put(m.getId(), new PaymentMethod(m.getId(), m.getDiscount(), m.getLimit().toString()));</span>
+<span class="fc" id="L186">            }</span>
+
+<span class="fc bfc" id="L188" title="All 2 branches covered.">            if (option.isPartialPoints()) {</span>
+<span class="fc" id="L189">                String[] methods = option.methodId.split(&quot;\\+&quot;);</span>
+<span class="fc" id="L190">                String pointsMethod = methods[0];</span>
+<span class="fc" id="L191">                String cardMethod = methods[1];</span>
+
+<span class="fc" id="L193">                newLimits.get(pointsMethod).setLimit(newLimits.get(pointsMethod).getLimit().subtract(option.pointsAmount));</span>
+<span class="fc" id="L194">                newLimits.get(cardMethod).setLimit(newLimits.get(cardMethod).getLimit().subtract(option.cardAmount));</span>
+<span class="fc" id="L195">            } else {</span>
+<span class="fc" id="L196">                newLimits.get(option.methodId).setLimit(newLimits.get(option.methodId).getLimit().subtract(option.originalAmount));</span>
+            }
+
+            // Prune: Check if remaining funds can cover remaining orders
+<span class="fc" id="L200">            BigDecimal remainingFunds = newLimits.values().stream()</span>
+<span class="fc" id="L201">                    .map(PaymentMethod::getLimit)</span>
+<span class="fc" id="L202">                    .reduce(BigDecimal.ZERO, BigDecimal::add);</span>
+<span class="fc" id="L203">            BigDecimal remainingOrderValue = remainingOrders.stream()</span>
+<span class="fc" id="L204">                    .map(Order::getValue)</span>
+<span class="fc" id="L205">                    .reduce(BigDecimal.ZERO, BigDecimal::add);</span>
+<span class="fc bfc" id="L206" title="All 2 branches covered.">            if (remainingFunds.compareTo(remainingOrderValue.multiply(PARTIAL_POINTS_DISCOUNT)) &lt; 0) {</span>
+<span class="fc" id="L207">                continue;</span>
+            }
+
+            // Recurse with updated limits
+<span class="fc" id="L211">            assignments.add(new PaymentAssignment(order.getId(), option));</span>
+<span class="fc bfc" id="L212" title="All 2 branches covered.">            if (assignPayments(remainingOrders, newLimits, assignments)) {</span>
+<span class="fc" id="L213">                return true;</span>
+            }
+<span class="fc" id="L215">            assignments.remove(assignments.size() - 1);</span>
+<span class="fc" id="L216">        }</span>
+
+<span class="fc" id="L218">        return false;</span>
+    }
+
+    /**
+     * Applies a payment assignment to the method usage.
+     *
+     * @param assignment The payment assignment.
+     */
+    private void applyPayment(PaymentAssignment assignment) {
+<span class="fc" id="L227">        PaymentOption option = assignment.option;</span>
+<span class="fc bfc" id="L228" title="All 2 branches covered.">        if (option.isPartialPoints()) {</span>
+<span class="fc" id="L229">            String[] methods = option.methodId.split(&quot;\\+&quot;);</span>
+<span class="fc" id="L230">            String pointsMethod = methods[0];</span>
+<span class="fc" id="L231">            String cardMethod = methods[1];</span>
+
+<span class="fc" id="L233">            methodUsage.merge(pointsMethod, option.pointsAmount, BigDecimal::add);</span>
+<span class="fc" id="L234">            methodUsage.merge(cardMethod, option.cardAmount, BigDecimal::add);</span>
+
+<span class="fc" id="L236">            methodMap.get(pointsMethod).setLimit(methodMap.get(pointsMethod).getLimit().subtract(option.pointsAmount));</span>
+<span class="fc" id="L237">            methodMap.get(cardMethod).setLimit(methodMap.get(cardMethod).getLimit().subtract(option.cardAmount));</span>
+
+<span class="fc" id="L239">        } else {</span>
+<span class="fc" id="L240">            methodUsage.merge(option.methodId, option.totalAmount, BigDecimal::add);</span>
+<span class="fc" id="L241">            methodMap.get(option.methodId).setLimit(methodMap.get(option.methodId).getLimit().subtract(option.originalAmount));</span>
+        }
+<span class="fc" id="L243">    }</span>
+
+    /**
+     * Prints the summary of used payment methods and amounts.
+     */
+    public void printSummary() {
+<span class="fc" id="L249">        methodUsage.forEach((methodId, amount) -&gt;</span>
+<span class="fc" id="L250">                System.out.println(methodId + &quot; &quot; + amount.setScale(2, RoundingMode.HALF_UP)));</span>
+<span class="fc" id="L251">    }</span>
+
+    /**
+     * Represents a payment option with its cost and priority.
+     */
+    private static class PaymentOption {
+        final String methodId;
+        final BigDecimal totalAmount; // Amount paid after discount
+        final BigDecimal originalAmount; // Original order value (for limit deduction)
+        final BigDecimal pointsAmount; // Points used (for partial payment)
+        final BigDecimal cardAmount; // Card amount (for partial payment)
+        final int priority; // Lower priority = prefer (points &gt; partial points &gt; card)
+
+        // Full payment with one method
+<span class="fc" id="L265">        PaymentOption(String methodId, BigDecimal totalAmount, BigDecimal originalAmount, int priority) {</span>
+<span class="fc" id="L266">            this.methodId = methodId;</span>
+<span class="fc" id="L267">            this.totalAmount = totalAmount;</span>
+<span class="fc" id="L268">            this.originalAmount = originalAmount;</span>
+<span class="fc" id="L269">            this.pointsAmount = BigDecimal.ZERO;</span>
+<span class="fc" id="L270">            this.cardAmount = BigDecimal.ZERO;</span>
+<span class="fc" id="L271">            this.priority = priority;</span>
+<span class="fc" id="L272">        }</span>
+
+        // Partial payment with points + card
+<span class="fc" id="L275">        PaymentOption(String methodId, BigDecimal totalAmount, BigDecimal pointsAmount, BigDecimal cardAmount, int priority) {</span>
+<span class="fc" id="L276">            this.methodId = methodId;</span>
+<span class="fc" id="L277">            this.totalAmount = totalAmount;</span>
+<span class="fc" id="L278">            this.originalAmount = pointsAmount.add(cardAmount); // Not used in partial payment</span>
+<span class="fc" id="L279">            this.pointsAmount = pointsAmount;</span>
+<span class="fc" id="L280">            this.cardAmount = cardAmount;</span>
+<span class="fc" id="L281">            this.priority = priority;</span>
+<span class="fc" id="L282">        }</span>
+
+        BigDecimal getTotalAmount() {
+<span class="fc" id="L285">            return totalAmount;</span>
+        }
+
+        int getPriority() {
+<span class="fc" id="L289">            return priority;</span>
+        }
+
+        boolean isPartialPoints() {
+<span class="fc bfc" id="L293" title="All 2 branches covered.">            return pointsAmount.compareTo(BigDecimal.ZERO) &gt; 0;</span>
+        }
+    }
+
+    /**
+     * Represents an assignment of a payment option to an order.
+     */
+    private static class PaymentAssignment {
+        final String orderId;
+        final PaymentOption option;
+
+<span class="fc" id="L304">        PaymentAssignment(String orderId, PaymentOption option) {</span>
+<span class="fc" id="L305">            this.orderId = orderId;</span>
+<span class="fc" id="L306">            this.option = option;</span>
+<span class="fc" id="L307">        }</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>
